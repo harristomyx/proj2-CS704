@@ -235,9 +235,12 @@ static void InitLSM() {
 static void startMag() {
   uint8_t inData[10];
 	//#CS704 - Write SPI commands to initiliase Magnetometer
-	//Set ODR to 10Hz
-  inData[0] = 0x00;
+  inData[0] = 0x8C; // Enable the magnetometer temperature compensation, ODR=100Hz 
   BSP_LSM303AGR_WriteReg_Mag(CFG_REG_A_M,inData,1);
+  inData[0] = 0x03; // Enable offset cancellation, LPF=On
+  BSP_LSM303AGR_WriteReg_Mag(CFG_REG_B_M,inData,1);
+  inData[0] = 0x10; // Enable BDU
+  BSP_LSM303AGR_WriteReg_Mag(CFG_REG_C_M,inData,1);
 }
 
 static void selfTestAcc() {
@@ -436,11 +439,11 @@ static void readMag() {
     XPRINTF("Mag X: %dmG, Y: %dmG, Z: %dmG\r\n", magXGauss, magYGauss, magZGauss);
 
     // Calculate heading and print to terminal
-    float heading = atan2(magY, magX) * 180 / PI;
+    int16_t heading = (float)atan2(magY, magX) * 180.0 / PI;
     if (heading < 0) {
         heading += 360;
     }
-//    XPRINTF("Heading: %.2f\r\n", heading);
+    XPRINTF("Heading: %d\r\n", heading);
     setLED2 = 1 - setLED2;
     HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, setLED2);
 	//Read IAM registers for Acc and Mag to verify connection - READ
