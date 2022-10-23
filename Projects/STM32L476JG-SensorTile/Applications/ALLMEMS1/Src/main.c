@@ -92,6 +92,11 @@
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
 
+#define NUM_SAMPLES 5
+#define X_AXIS 0
+#define Y_AXIS 1
+#define Z_AXIS 2
+
 
 /* Shutdown mode enabled as default for SensorTile */
 #define ENABLE_SHUT_DOWN_MODE 0
@@ -418,7 +423,7 @@ static void startAcc() {
     BSP_LSM303AGR_WriteReg_Acc(CTRL_REG4_A, inData, 1);
 }
 
-static void readMag() {
+static void deprcReadMag() {
   uint8_t inData[10];
 
 	//#CS704 - Read Magnetometer Data over SPI
@@ -458,14 +463,112 @@ static void readMag() {
     MAG_Value.z=magZGauss;
   }
 }
+static int kalman_MagX = 0;
+static int kalman_MagY = 0;
+static int kalman_MagZ = 0;
+
+static int kalman_magX_error = 0;
+static int kalman_magY_error = 0;
+static int kalman_magZ_error = 0;
+
+// Read 5 samples of magnetometer data and return the average after passing through Kalman filter
+static void sampleMag(int* gaussMagData){
+  uint8_t inData[10];
+  BSP_LSM303AGR_ReadReg_Mag(STATUS_REG_M, inData, 1);
+  if (inData[0] & 0x08) {
+    // Read magnetometer data
+    BSP_LSM303AGR_ReadReg_Mag(OUTX_L_REG_M, inData, 6);
+    // Convert magnetometer data to 16-bit values
+    int magX = (int16_t)((uint16_t)inData[1] << 8) | inData[0];
+    int magY = (int16_t)((uint16_t)inData[3] << 8) | inData[2];
+    int magZ = (int16_t)((uint16_t)inData[5] << 8) | inData[4];
+
+    // Convert magnetometer data to mgauss
+    gaussMagData[X_AXIS] = (float)magX * 1.5;
+    gaussMagData[Y_AXIS] = (float)magY * 1.5;
+    gaussMagData[Z_AXIS] = (float)magZ * 1.5;
+  }
+}
+
+static void readMag(){
+  int magData[3] = {0,0,0};
+  int magXGauss = 0;
+  int magYGauss = 0;
+  int magZGauss = 0;
+  for(uint8_t i = 0; i < NUM_SAMPLES; i++){
+    sampleMag(magData);
+    magXGauss += magData[X_AXIS];
+    magYGauss += magData[Y_AXIS];
+    magZGauss += magData[Z_AXIS];
+  }
+
+  // Store average of the 5 samples in the variables
+  magXGauss /= NUM_SAMPLES;
+  magYGauss /= NUM_SAMPLES;
+  magZGauss /= NUM_SAMPLES;
+
+  magXGauss = (float) magXGauss * 1.5;
+  magYGauss = (float) magYGauss * 1.5;
+  magZGauss = (float) magZGauss * 1.5;
+
+  XPRINTF("Mag X: %dmG, Y: %dmG, Z: %dmG\r\n", magXGauss, magYGauss, magZGauss);
+
+  // Calculate heading and print to terminal
+  int16_t heading = (float)atan2(magYGauss, magXGauss) * 180.0 / PI;
+  if (heading < 0) {
+      heading += 360;
+  }
+  XPRINTF("Heading: %d\r\n", heading);
+}
+
+
+
+
 
 float_t fs_2g_to_mg(int16_t raw)
 {
   return ((float_t)raw / 16.0f) * 0.98f;
 }
 
+static void sampleAcc(int* accData) {
+  uint8_t inData[10];
+	//#CS704 - Read Accelerometer Data over SPI
+	// Read accelerometer data if new value available
+	BSP_LSM303AGR_ReadReg_Acc(STATUS_REG_A, inData, 1);
+	if (inData[0] & 0x08) {
+		// Read accelerometer data from 0x28 to 0x2D (Accel X LSB to Accel Z MSB)
+		BSP_LSM303AGR_ReadReg_Acc(OUT_X_L_A, inData, 6);
+    accData[X_AXIS] = (int16_t)((uint16_t)inData[1] << 8) | inData[0];
+		accData[Y_AXIS] = (int16_t)((uint16_t)inData[3] << 8) | inData[2];
+		accData[Z_AXIS] = (int16_t)((uint16_t)inData[5] << 8) | inData[4];
+  }
+}
 
-static void readAcc() {
+static void readAcc(){
+  int accData[3] = {0,0,0};
+  int accXGauss = 0;
+  int accYGauss = 0;
+  int accZGauss = 0;
+  for(uint8_t i = 0; i < NUM_SAMPLES; i++){
+    sampleAcc(accData);
+    accXGauss += accData[X_AXIS];
+    accYGauss += accData[Y_AXIS];
+    accZGauss += accData[Z_AXIS];
+  }
+
+  // Store average of the 5 samples in the variables
+  accXGauss /= NUM_SAMPLES;
+  accYGauss /= NUM_SAMPLES;
+  accZGauss /= NUM_SAMPLES;
+
+  accXGauss = fs_2g_to_mg(accXGauss);
+  accYGauss = fs_2g_to_mg(accYGauss);
+  accZGauss = fs_2g_to_mg(accZGauss);
+
+  XPRINTF("Acc X: %dmG, Y: %dmG, Z: %dmG\r\n", accXGauss, accYGauss, accZGauss);
+}
+
+static void deprecreadAcc() {
 	uint8_t inData[10];
 
 	//#CS704 - Read Accelerometer Data over SPI
