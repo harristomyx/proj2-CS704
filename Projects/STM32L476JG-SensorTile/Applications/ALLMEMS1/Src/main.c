@@ -89,6 +89,11 @@
 
 #define PI 3.14159265
 
+#define STRIDE_LENGTH_CM 73
+#define STEP_STARTED_THRESHOLD 1150
+#define STEP_ENDED_THRESHOLD 800
+#define STEP_TIMEOUT 500
+
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
 
@@ -458,9 +463,9 @@ static void deprcReadMag() {
 //		XPRINTF("IAM Acc= %d,%d",inData[0],inData[1]);
 
 	//#CS704 - store sensor values into the variables below
-    MAG_Value.x=magXGauss;
-    MAG_Value.y=magYGauss;
-    MAG_Value.z=magZGauss;
+    // MAG_Value.x=magXGauss;
+    // MAG_Value.y=magYGauss;
+    // MAG_Value.z=magZGauss;
   }
 }
 // static int kalman_MagX = 0;
@@ -511,9 +516,9 @@ static void readMag(){
   magYGauss = (float) magYGauss * 1.5;
   magZGauss = (float) magZGauss * 1.5;
 
-  MAG_Value.x = magXGauss;
-  MAG_Value.y = magYGauss;
-  MAG_Value.z = magZGauss;
+  // MAG_Value.x = magXGauss;
+  // MAG_Value.y = magYGauss;
+  // MAG_Value.z = magZGauss;
   // XPRINTF("Mag X: %dmG, Y: %dmG, Z: %dmG\r\n", magXGauss, magYGauss, magZGauss);
 
   // Calculate heading and print to terminal
@@ -660,13 +665,7 @@ int main(void)
 
   COMP_Value = (COMP_Data){.x = 0, .y = 0, .Heading = 0};
 
-  HAL_Delay(200);
-  BSP_LED_Toggle(LED1);
-  HAL_Delay(200);
-  BSP_LED_Toggle(LED1);
-  HAL_Delay(200);
-  BSP_LED_Toggle(LED1);
-  HAL_Delay(200);
+  HAL_Delay(1000);
 
   if(ReadSensor){
     XPRINTF("================= INITIALIZATION =================\r\n");
@@ -689,13 +688,35 @@ int main(void)
   /************************** Heading Init. ***************************/
   /********************************************************************/
 
+  /********************************************************************/
+  /*********************** Step Tracking Init. ************************/
+  /********************************************************************/
+
+  uint32_t currentTime = HAL_GetTick();
+  uint32_t stepStartedTime = HAL_GetTick();
+
+
+  uint8_t stepCount = 0;
+  uint8_t stepCountPrev = 0;
+  uint8_t stepStarted = 0;
+  uint8_t readyToCalcDistance = 0;
+
+  int32_t xPos = 0;
+  int32_t yPos = 0;
+  int32_t prevXPos = 0;
+  int32_t prevYPos = 0;
+
+  /********************************************************************/
+  /*********************** Step Tracking Fini. ************************/
+  /********************************************************************/
+
   HAL_Delay(100);
   BSP_LED_Toggle(LED1);
   HAL_Delay(100);
   BSP_LED_Toggle(LED1);
   HAL_Delay(100);
   BSP_LED_Toggle(LED1);
-  HAL_Delay(3000);
+  HAL_Delay(3000); // Delay before main program for step detection tracking begins
   
 
   //***************************************************
@@ -751,14 +772,56 @@ int main(void)
       if (compassHeading < 0) {
           compassHeading += 360;
       }
-    	COMP_Value.x++;
-    	COMP_Value.y++;
+    	// COMP_Value.x = 1000;
+    	// COMP_Value.y = -1000;
     	COMP_Value.Heading = compassHeading - initialHeading;
       if (COMP_Value.Heading < 0) {
           COMP_Value.Heading += 360;
       }
-      // XPRINTF("Relative heading: %d\r\n", (int)COMP_Value.Heading);
-      // XPRINTF("Compass Heading: %d\r\n", compassHeading);
+
+      // Step detection from accelerometer data
+      currentTime = HAL_GetTick();
+      // Check if step has already started, and don't start a new step 
+      // if one is already in progress or enough time hasn't elapsed
+      if ((int)ACC_Value.z > STEP_STARTED_THRESHOLD && stepStarted == 0 && (currentTime - stepStartedTime) > STEP_TIMEOUT) {
+        stepStarted = 1;
+        MAG_Value.x = 1000;
+        stepStartedTime = HAL_GetTick();
+        BSP_LED_Toggle(LED1);
+      } 
+      if ( (int)ACC_Value.z < STEP_ENDED_THRESHOLD && stepStarted == 1) {
+        stepStarted = 0;
+        MAG_Value.x = -1000;
+        stepCount++;
+        readyToCalcDistance = 1;
+      }
+      if ( (int)ACC_Value.z > STEP_ENDED_THRESHOLD && stepStarted == 0 && readyToCalcDistance == 1) {
+        readyToCalcDistance = 0;
+        // Calculate distance travelled
+        // xPos = (int) (stepCount - stepCountPrev) * STRIDE_LENGTH_CM * cos(COMP_Value.Heading * PI / 180.0);
+        // yPos = (int) (stepCount - stepCountPrev) * STRIDE_LENGTH_CM * sin(COMP_Value.Heading * PI / 180.0);
+        // xPos = STRIDE_LENGTH_CM * cos((int)COMP_Value.Heading * PI / 180.0);
+        // yPos = STRIDE_LENGTH_CM * sin((int)COMP_Value.Heading * PI / 180.0);
+        xPos = STRIDE_LENGTH_CM * cos(90 * PI / 180.0);
+        yPos = STRIDE_LENGTH_CM * sin(90 * PI / 180.0);
+        // stepCountPrev = stepCount;
+        // Calculate total distance travelled
+        xPos += prevXPos;
+        yPos += prevYPos;
+        prevXPos = xPos;
+        prevYPos = yPos;
+        COMP_Value.x = prevXPos;
+        COMP_Value.y = prevYPos;
+        BSP_LED_Toggle(LED1);
+        MAG_Value.x = 0;
+        MAG_Value.z = stepCount;
+
+      }
+
+      XPRINTF("\r\nRelative heading: %d\r\n", (int)COMP_Value.Heading);
+      XPRINTF("Compass Heading: %d\r\n", compassHeading);
+      XPRINTF("X: %d\r\n", prevXPos);
+      XPRINTF("Y: %d\r\n\r\n", prevYPos);
 
     }
 
