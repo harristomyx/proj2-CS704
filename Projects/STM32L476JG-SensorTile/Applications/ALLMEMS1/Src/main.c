@@ -463,13 +463,13 @@ static void deprcReadMag() {
     MAG_Value.z=magZGauss;
   }
 }
-static int kalman_MagX = 0;
-static int kalman_MagY = 0;
-static int kalman_MagZ = 0;
+// static int kalman_MagX = 0;
+// static int kalman_MagY = 0;
+// static int kalman_MagZ = 0;
 
-static int kalman_magX_error = 0;
-static int kalman_magY_error = 0;
-static int kalman_magZ_error = 0;
+// static int kalman_magX_error = 0;
+// static int kalman_magY_error = 0;
+// static int kalman_magZ_error = 0;
 
 // Read 5 samples of magnetometer data and return the average after passing through Kalman filter
 static void sampleMag(int* gaussMagData){
@@ -511,14 +511,17 @@ static void readMag(){
   magYGauss = (float) magYGauss * 1.5;
   magZGauss = (float) magZGauss * 1.5;
 
-  XPRINTF("Mag X: %dmG, Y: %dmG, Z: %dmG\r\n", magXGauss, magYGauss, magZGauss);
+  MAG_Value.x = magXGauss;
+  MAG_Value.y = magYGauss;
+  MAG_Value.z = magZGauss;
+  // XPRINTF("Mag X: %dmG, Y: %dmG, Z: %dmG\r\n", magXGauss, magYGauss, magZGauss);
 
   // Calculate heading and print to terminal
   int16_t heading = (float)atan2(magYGauss, magXGauss) * 180.0 / PI;
   if (heading < 0) {
       heading += 360;
   }
-  XPRINTF("Heading: %d\r\n", heading);
+  // XPRINTF("Heading: %d\r\n", heading);
 }
 
 
@@ -565,7 +568,9 @@ static void readAcc(){
   accYGauss = fs_2g_to_mg(accYGauss);
   accZGauss = fs_2g_to_mg(accZGauss);
 
-  XPRINTF("Acc X: %dmG, Y: %dmG, Z: %dmG\r\n", accXGauss, accYGauss, accZGauss);
+  ACC_Value = (BSP_MOTION_SENSOR_Axes_t) {accXGauss, accYGauss, accZGauss};
+
+  // XPRINTF("Acc X: %dmG, Y: %dmG, Z: %dmG\r\n", accXGauss, accYGauss, accZGauss);
 }
 
 static void deprecreadAcc() {
@@ -646,10 +651,58 @@ int main(void)
   startMag();
   startAcc();
 
+  /********************************************************************/
+  /************************** Heading Init. ***************************/
+  /********************************************************************/
+  
+  int16_t initialHeading = 0;
+  int16_t compassHeading = 0;
+
+  COMP_Value = (COMP_Data){.x = 0, .y = 0, .Heading = 0};
+
+  HAL_Delay(200);
+  BSP_LED_Toggle(LED1);
+  HAL_Delay(200);
+  BSP_LED_Toggle(LED1);
+  HAL_Delay(200);
+  BSP_LED_Toggle(LED1);
+  HAL_Delay(200);
+
+  if(ReadSensor){
+    XPRINTF("================= INITIALIZATION =================\r\n");
+    XPRINTF("First magnetometer reading\r\n");
+    readMag();
+    compassHeading = (float)atan2(
+      (int)MAG_Value.y,
+      (int)MAG_Value.x)
+       * 180.0 / PI;
+
+    if (compassHeading < 0) {compassHeading += 360;}
+    initialHeading = compassHeading;
+    COMP_Value.Heading = compassHeading - initialHeading;
+    XPRINTF("\r\nInitial heading: %d\r\n", initialHeading);
+    XPRINTF("Relative heading: %d\r\n\r\n", (int)COMP_Value.Heading);
+    XPRINTF("=============== END INITIALIZATION ===============\r\n\r\n");
+
+  }
+  /********************************************************************/
+  /************************** Heading Init. ***************************/
+  /********************************************************************/
+
+  HAL_Delay(100);
+  BSP_LED_Toggle(LED1);
+  HAL_Delay(100);
+  BSP_LED_Toggle(LED1);
+  HAL_Delay(100);
+  BSP_LED_Toggle(LED1);
+  HAL_Delay(3000);
+  
+
   //***************************************************
   //***************************************************
   //************ Initialise ends **********************
   //***************************************************
+
 
 
   /* Infinite loop */
@@ -657,7 +710,7 @@ int main(void)
   {
       if(!connected) {
           if(!(HAL_GetTick()&0x3FF)) {
-        	  BSP_LED_Toggle(LED1);
+        	  // BSP_LED_Toggle(LED1);
           }
       }
     if(set_connectable){
@@ -692,10 +745,20 @@ int main(void)
     	SendAccGyroMag = 1;
 
 	//*********process sensor data*********
+      // Calculate heading (yaw) from magnetometer data
 
+      compassHeading = (float)atan2((int)MAG_Value.y, (int)MAG_Value.x) * 180.0 / PI;
+      if (compassHeading < 0) {
+          compassHeading += 360;
+      }
     	COMP_Value.x++;
     	COMP_Value.y++;
-    	COMP_Value.Heading+=10;
+    	COMP_Value.Heading = compassHeading - initialHeading;
+      if (COMP_Value.Heading < 0) {
+          COMP_Value.Heading += 360;
+      }
+      // XPRINTF("Relative heading: %d\r\n", (int)COMP_Value.Heading);
+      // XPRINTF("Compass Heading: %d\r\n", compassHeading);
 
     }
 
